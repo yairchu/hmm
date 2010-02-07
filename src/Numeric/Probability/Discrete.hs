@@ -2,7 +2,8 @@
 
 module Numeric.Probability.Discrete
   ( Probs(..)
-  , makeProbs, probsIndex, probsRandom
+  , probsIndex, probsRandom
+  , makeProbsFastRand, makeProbsLean
   ) where
 
 import Control.Monad (liftM)
@@ -16,18 +17,28 @@ import System.Random (Random)
 data Probs state prob =
   Probs
   { probsFunc :: state -> prob
-  , probsNumStates :: Int
-  , probsState :: Int -> state
-  , probsAccum :: Int -> prob
+  , probsExt :: ProbsExt state prob
   }
 
-makeProbs
+data ProbsExt state prob
+  = ProbsLean [state]
+  | ProbsFastRand
+    { probsState :: Int -> state
+    , probsAccum :: Int -> prob
+    , probsNumStates :: Int
+    }
+
+makeProbsLean :: [state] -> (state -> prob) -> Probs state prob
+makeProbsLean states func =
+  Probs func (ProbsLean states)
+
+makeProbsFastRand
   :: forall prob state. (Num prob, IArray UArray prob)
   => [state] -> (state -> prob) -> Probs state prob
-makeProbs states func =
-  Probs
-  { probsFunc = func
-  , probsNumStates = numStates
+makeProbsFastRand states func =
+  Probs func $
+  ProbsFastRand
+  { probsNumStates = numStates
   , probsState = (stateArr !)
   , probsAccum = (accumArr !)
   }
@@ -42,11 +53,15 @@ makeProbs states func =
       . init $ states
 
 probsIndex :: Ord prob => Probs state prob -> prob -> state
-probsIndex probs idx
-  = probsState probs
-  . fromJust
-  . searchFromTo ((>= idx) . probsAccum probs) 0
-  $ probsNumStates probs - 1
+probsIndex (Probs _ (ProbsFastRand si acc ns)) idx
+  = si . fromJust
+  $ searchFromTo ((>= idx) . acc) 0 (ns - 1)
+probsIndex (Probs probFunc (ProbsLean states)) idx
+  = fst . head
+  . dropWhile ((<= idx) . snd)
+  . map f $ states
+  where
+    f x = (x, probFunc x)
 
 probsRandom
   :: (Fractional prob, Ord prob, Random prob, MonadRandom m)
