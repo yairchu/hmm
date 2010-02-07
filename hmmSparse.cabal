@@ -1,0 +1,28 @@
+Name:                hmmSparse
+Version:             0.1
+Category:            Numeric
+Synopsis:            Sparse Hidden Markov Models
+Description:
+  An efficient library for Hidden Markov Models.
+  Supports:
+  - Viterbi algorithm
+  - Forward and backward algorithms
+  - Generating random sequences
+  - Sparse HMM models
+
+License:             BSD3
+License-file:        LICENSE
+Author:              Yair Chuchem
+Maintainer:          yairchu@gmail.com
+Cabal-Version:       >= 1.2
+Stability:           experiemental
+Build-type:          Simple
+
+Library
+  hs-Source-Dirs:      src
+  Extensions:
+  Build-Depends:       base >= 3 && < 5, array
+  Exposed-modules:     Numeric.HMM.Sparse
+                       Numeric.Probability.Discrete
+  ghc-options:         -O2 -Wall
+
