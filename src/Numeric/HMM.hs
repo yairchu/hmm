@@ -1,6 +1,6 @@
 {-# LANGUAGE FlexibleContexts, ScopedTypeVariables #-}
 
-module Numeric.HMM.Sparse
+module Numeric.HMM
   ( Hmm(..), HmmFwdBwd(..), HmmViterbi(..)
   , makeDenseHmm
   , hmmGenerate

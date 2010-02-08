@@ -23,7 +23,7 @@ Library
   Extensions:
   Build-Depends:       base >= 3 && < 5, array, random,
                        binary-search, List, MonadRandom
-  Exposed-modules:     Numeric.HMM.Sparse
+  Exposed-modules:     Numeric.HMM
                        Numeric.Probability.Discrete
                        Data.Array.Unboxed.YC
   ghc-options:         -O2 -Wall
