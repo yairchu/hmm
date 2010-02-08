@@ -11,6 +11,14 @@ import Control.Monad.Random.Class (MonadRandom)
 import Data.List.Class (iterateM, toList)
 import System.Random (Random)
 
+hmmGenerateHiddenStates
+  :: (MonadRandom m, Fractional prob, Ord prob, Random prob)
+  => Hmm state obs prob -> ListT m state
+hmmGenerateHiddenStates hmm =
+  iterateM
+  (probsRandom . hmmTransitionProbs hmm)
+  ((probsRandom . hmmStartProbs) hmm)
+
 hmmGenerate
   :: (MonadRandom m, Fractional prob, Ord prob, Random prob)
   => Hmm state obs prob -> m [obs]
@@ -19,7 +27,7 @@ hmmGenerate hmm
   >>= addObs
   >>= liftM (map snd)
     . (toList :: Monad m => ListT m a -> m [a])
-    . iterateM step
+    . iterateM step . return
   where
     addObs state
       = liftM ((,) state)
