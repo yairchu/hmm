@@ -1,38 +1,38 @@
 module Numeric.HMM.Generate
   ( hmmGenerate
+  , hmmGenerateObservations
+  , hmmGenerateHiddenStates
   ) where
 
 import Numeric.HMM (Hmm(..))
 import Numeric.Probability.Discrete (probsRandom)
 
-import Control.Monad (liftM)
+import Control.Applicative ((<*>))
 import Control.Monad.ListT (ListT)
 import Control.Monad.Random.Class (MonadRandom)
-import Data.List.Class (iterateM, toList)
+import Data.List.Class (iterateM, joinM)
 import System.Random (Random)
 
+class (Fractional a, Ord a, Random a) => SuitableRandom a
+
 hmmGenerateHiddenStates
-  :: (MonadRandom m, Fractional prob, Ord prob, Random prob)
+  :: (MonadRandom m, SuitableRandom prob)
   => Hmm state obs prob -> ListT m state
 hmmGenerateHiddenStates hmm =
   iterateM
   (probsRandom . hmmTransitionProbs hmm)
   ((probsRandom . hmmStartProbs) hmm)
 
+hmmGenerateObservations
+  :: (MonadRandom m, SuitableRandom prob)
+  => Hmm state obs prob -> ListT m state -> ListT m obs
+hmmGenerateObservations hmm =
+  joinM . fmap (probsRandom . hmmObservationProbs hmm)
+
 hmmGenerate
-  :: (MonadRandom m, Fractional prob, Ord prob, Random prob)
-  => Hmm state obs prob -> m [obs]
-hmmGenerate hmm
-  = probsRandom (hmmStartProbs hmm)
-  >>= addObs
-  >>= liftM (map snd)
-    . (toList :: Monad m => ListT m a -> m [a])
-    . iterateM step . return
-  where
-    addObs state
-      = liftM ((,) state)
-      . probsRandom $ hmmObservationProbs hmm state
-    step (state, _)
-      = probsRandom (hmmTransitionProbs hmm state)
-      >>= addObs
+  :: (MonadRandom m, SuitableRandom prob)
+  => Hmm state obs prob -> ListT m obs
+hmmGenerate
+  = hmmGenerateObservations
+  <*> hmmGenerateHiddenStates
 
