@@ -22,9 +22,10 @@ Library
   hs-Source-Dirs:      src
   Extensions:
   Build-Depends:       base >= 3 && < 5, array, random,
-                       binary-search, List, MonadRandom
+                       binary-search, List, MonadRandom, TypeCompose
   Exposed-modules:     Numeric.HMM
                        Numeric.Probability.Discrete
                        Data.Array.Unboxed.YC
+                       Data.IndexRange
   ghc-options:         -O2 -Wall
 

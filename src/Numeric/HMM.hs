@@ -9,6 +9,7 @@ module Numeric.HMM
   ) where
 
 import Data.Array.Unboxed.YC
+import Data.IndexRange
 import Numeric.Probability.Discrete
 
 import Control.Applicative ((<$>), (<*>), ZipList(..), liftA2)
@@ -16,9 +17,9 @@ import Control.Monad (forM_, liftM)
 import Control.Monad.ListT (ListT)
 import Control.Monad.Random.Class (MonadRandom)
 import Control.Monad.ST
-import Data.Array.IArray (IArray, Array, (!), listArray)
+import Data.Array.IArray (IArray)
 import Data.Array.Unboxed (UArray)
-import Data.Ix (Ix, range, rangeSize)
+import Data.Bijection
 import Data.List.Class (iterateM, toList)
 import Data.STRef
 import System.Random (Random)
@@ -38,39 +39,29 @@ data Hmm state obs prob =
   , hmmStatesForObservation :: obs -> HmmLayerDesc state
   }
 
-funcArray :: (IArray a e, Ix i) => (i, i) -> (i -> e) -> a i e
-funcArray rng func = listArray rng . map func $ range rng
-
 -- | Create HMM model from dense input.
 -- Uses O(N) memory where N is number of variables in model,
 -- (for fast output generation).
 makeDenseHmm
-  :: forall s o p. (Floating p, Ix s, Integral s, Integral o, IArray UArray p)
-  => (s, s) -> (o, o)
+  :: forall s o p. (Floating p, IArray UArray p)
+  => IndexRange s -> IndexRange o
   -> (s -> p) -> (s -> s -> p) -> (s -> o -> p)
   -> Hmm s o p
 makeDenseHmm statesRange obsRange startProbs transProbs obsProbs =
   Hmm
   { hmmStartProbs = makeProbsFast statesRange startProbs
-  , hmmTransitionProbs = (transArr !)
-  , hmmObservationProbs = (obsArr !)
+  , hmmTransitionProbs =
+      irMemo statesRange (makeProbsFast statesRange . transProbs)
+  , hmmObservationProbs =
+      irMemo statesRange (makeProbsFast obsRange . obsProbs)
   , hmmStatesForObservation =
       const
       HmmLayerDesc
-      { hmmLayerSize = numStates
-      , hmmLayerStates = (statesArr !)
-      , hmmLayerTransitionsFromPrev = const [0 .. numStates - 1]
+      { hmmLayerSize = irSize statesRange
+      , hmmLayerStates = biTo (irIndex statesRange)
+      , hmmLayerTransitionsFromPrev = const [0 .. irSize statesRange - 1]
       }
   }
-  where
-    numStates = rangeSize statesRange
-    states = range statesRange
-    statesArr :: Array Int s
-    statesArr = listArray (0, numStates - 1) states
-    transArr :: Array s (Probs s p)
-    transArr = funcArray statesRange (makeProbsFast statesRange . transProbs)
-    obsArr :: Array s (Probs o p)
-    obsArr = funcArray statesRange (makeProbsFast obsRange . obsProbs)
 
 hmmGenerate
   :: (MonadRandom m, Fractional prob, Ord prob, Random prob)
@@ -129,7 +120,7 @@ hmmViterbi model observations = runST $ do
         modifySTUArray arr (arrIdx + i) (+ probFunc (hmmLayerStates layer i))
     addLayerObsWeights arrIdx layer obser =
       addLayerWeights arrIdx layer
-        ((`probsLogs` obser) . hmmObservationProbs model)
+        ((`probsLog` obser) . hmmObservationProbs model)
   arrIdxRef <- newSTRef 0
   forM_
     (getZipList ((,,)
@@ -152,7 +143,7 @@ hmmViterbi model observations = runST $ do
             >>= modifySTUArray arr (arrIdxP + iP) . max
   layer0Idx <- readSTRef arrIdxRef
   addLayerObsWeights layer0Idx (head layers) (head observations)
-  addLayerWeights layer0Idx (head layers) . probsLogs $ hmmStartProbs model
+  addLayerWeights layer0Idx (head layers) . probsLog $ hmmStartProbs model
   undefined
   where
     arrSize = sum $ map hmmLayerSize layers
