@@ -8,6 +8,7 @@ module Numeric.HMM.Sparse
   , hmmViterbi, hmmViterbiCertainty
   ) where
 
+import Data.Array.Unboxed.YC
 import Numeric.Probability.Discrete
 
 import Control.Applicative ((<$>), (<*>), ZipList(..), liftA2)
@@ -16,8 +17,6 @@ import Control.Monad.ListT (ListT)
 import Control.Monad.Random.Class (MonadRandom)
 import Control.Monad.ST
 import Data.Array.IArray (IArray, Array, (!), listArray)
-import Data.Array.MArray
-import Data.Array.ST (STUArray)
 import Data.Array.Unboxed (UArray)
 import Data.Ix (Ix, range, rangeSize)
 import Data.List.Class (iterateM, toList)
@@ -119,31 +118,11 @@ hmmViterbiCertainty :: Num prob
   => HmmViterbi state prob -> HmmFwdBwd state prob -> prob
 hmmViterbiCertainty v fb = hmmViterbiLogProb v - hmmLogProb fb
 
-class Unboxed a where
-  newSTUArray :: Ix i => (i, i) -> a -> ST s (STUArray s i a)
-  readSTUArray :: Ix i => STUArray s i a -> i -> ST s a
-  writeSTUArray :: Ix i => STUArray s i a -> i -> a -> ST s ()
-
-instance Unboxed Float where
-  newSTUArray = newArray
-  readSTUArray = readArray
-  writeSTUArray = writeArray
-
-instance Unboxed Double where
-  newSTUArray = newArray
-  readSTUArray = readArray
-  writeSTUArray = writeArray
-
-modifySTUArray :: (Unboxed a, Ix i) => STUArray s i a -> i -> (a -> a) -> ST s ()
-modifySTUArray arr idx func =
-  readSTUArray arr idx >>= writeSTUArray arr idx . func
-
 hmmViterbi
-  :: forall state obs prob
-   . (Unboxed prob, Floating prob, Ord prob)
+  :: (Unboxed prob, Floating prob, Ord prob)
   => Hmm state obs prob -> [obs] -> HmmViterbi state prob
 hmmViterbi model observations = runST $ do
-  arr <- newSTUArray (0, arrSize - 1) 0 :: ST s (STUArray s Int prob)
+  arr <- newSTUArray (0, arrSize - 1) 0
   let
     addLayerWeights arrIdx layer probFunc =
       forM_ [0 .. hmmLayerSize layer - 1] $ \i ->

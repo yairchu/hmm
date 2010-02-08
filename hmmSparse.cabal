@@ -25,5 +25,6 @@ Library
                        binary-search, List, MonadRandom
   Exposed-modules:     Numeric.HMM.Sparse
                        Numeric.Probability.Discrete
+                       Data.Array.Unboxed.YC
   ghc-options:         -O2 -Wall
 
