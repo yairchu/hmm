@@ -34,13 +34,13 @@ funcArray rng func = listArray rng . map func $ range rng
 -- Uses O(N) memory where N is number of variables in model,
 -- (for fast output generation).
 makeDenseHmm
-  :: forall s o p. (Num p, Ix s, IArray UArray p)
+  :: forall s o p. (Floating p, Ix s, IArray UArray p)
   => (s, s) -> [o]
   -> (s -> p) -> (s -> s -> p) -> (s -> o -> p)
   -> Hmm s o p
 makeDenseHmm statesRange obs startProbs transProbs obsProbs =
   Hmm
-  { hmmStartProbs = makeProbsFastRand states startProbs
+  { hmmStartProbs = makeProbsFast states startProbs
   , hmmTransitionProbs = (transArr !)
   , hmmObservationProbs = (obsArr !)
   , hmmStatesForObservation = const (numStates, (statesArr !))
@@ -52,9 +52,9 @@ makeDenseHmm statesRange obs startProbs transProbs obsProbs =
     statesArr :: Array Int s
     statesArr = listArray (0, numStates - 1) states
     transArr :: Array s (Probs s p)
-    transArr = funcArray statesRange (makeProbsFastRand states . transProbs)
+    transArr = funcArray statesRange (makeProbsFast states . transProbs)
     obsArr :: Array s (Probs o p)
-    obsArr = funcArray statesRange (makeProbsFastRand obs . obsProbs)
+    obsArr = funcArray statesRange (makeProbsFast obs . obsProbs)
 
 hmmGenerate
   :: (MonadRandom m, Fractional prob, Ord prob, Random prob)
