@@ -1,5 +1,3 @@
-{-# LANGUAGE FlexibleContexts #-}
-
 module Numeric.HMM.Viterbi
   ( ViterbiResult(..)
   , viterbi, viterbiPathCertainty
@@ -13,7 +11,7 @@ import Numeric.Probability.Discrete (probsLog)
 import Control.Applicative ((<$>), (<*>), ZipList(..))
 import Control.Monad (forM_)
 import Data.Array.ST (runSTUArray)
-import Data.Array.IArray (IArray, (!))
+import Data.Array.IArray ((!))
 import Data.Array.Unboxed (UArray)
 import Data.List (maximumBy)
 import Data.Ord (comparing)
@@ -77,7 +75,7 @@ maximumOn :: Ord b => (a -> b) -> [a] -> a
 maximumOn = maximumBy . comparing
 
 viterbi
-  :: (IArray UArray prob, Unboxed prob, Floating prob, Ord prob)
+  :: (Unboxed prob, Floating prob, Ord prob)
   => Hmm state obs prob -> [obs] -> ViterbiResult state prob
 viterbi model observations =
   last res `seq`
