@@ -24,6 +24,7 @@ Library
   Build-Depends:       base >= 3 && < 5, array, random,
                        binary-search, List, MonadRandom, TypeCompose
   Exposed-modules:     Numeric.HMM
+                       Numeric.HMM.FwdBwd
                        Numeric.HMM.Generate
                        Numeric.HMM.Viterbi
                        Numeric.Probability.Discrete

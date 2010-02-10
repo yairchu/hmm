@@ -1,18 +1,16 @@
 {-# LANGUAGE FlexibleContexts, ScopedTypeVariables #-}
 
 module Numeric.HMM
-  ( Hmm(..), HmmLayerDesc(..), HmmFwdBwd(..)
+  ( Hmm(..), HmmLayerDesc(..)
   , makeDenseHmm
-  , hmmLayerProbs
   ) where
 
 import Data.IndexRange
 import Numeric.Probability.Discrete
 
-import Control.Applicative (liftA2)
 import Data.Array.IArray (IArray)
 import Data.Array.Unboxed (UArray)
-import Data.Bijection
+import Data.Bijection (Bijection(biTo))
 
 data HmmLayerDesc state =
   HmmLayerDesc
@@ -52,23 +50,4 @@ makeDenseHmm statesRange obsRange startProbs transProbs obsProbs =
       , hmmLayerTransitionsFromPrev = const [0 .. irSize statesRange - 1]
       }
   }
-
-data HmmFwdBwd state prob =
-  HmmFwdBwd
-  { -- | Forward algorithm. Including current layer's weight.
-    -- Each layer is normalized.
-    hmmForward :: Int -> state -> prob
-  , -- | Backward algorithm. Not including current layer's weights
-    -- Each layer is normalized.
-    hmmBackward :: Int -> state -> prob
-  , -- | Probabilty for observation according to model.
-    hmmLogProb :: prob
-  , hmmLayerMult :: Int -> prob
-  }
-
-hmmLayerProbs :: Num prob
-  => HmmFwdBwd state prob -> Int -> state -> prob
-hmmLayerProbs
-  = (liftA2 . liftA2) (fmap . (*)) hmmLayerMult
-  $ (liftA2 . liftA2 . liftA2) (*) hmmForward hmmBackward
 

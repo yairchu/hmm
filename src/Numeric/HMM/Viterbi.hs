@@ -6,7 +6,8 @@ module Numeric.HMM.Viterbi
   ) where
 
 import Data.Array.Unboxed.YC (Unboxed(..), modifySTUArray)
-import Numeric.HMM (Hmm(..), HmmLayerDesc(..), HmmFwdBwd(..))
+import Numeric.HMM (Hmm(..), HmmLayerDesc(..))
+import Numeric.HMM.FwdBwd (HmmFwdBwd(..))
 import Numeric.Probability.Discrete (probsLog)
 
 import Control.Applicative ((<$>), (<*>), ZipList(..))
@@ -92,7 +93,7 @@ viterbi model observations =
     arr = viterbiArr model observations layers
     layersInfo = zip layers . scanl (+) 0 $ map hmmLayerSize layers
     firstLayer = head layers
-    startIdx = maximumOn (arr !) $ [0 .. hmmLayerSize firstLayer]
+    startIdx = maximumOn (arr !) [0 .. hmmLayerSize firstLayer]
     start = hmmLayerStates firstLayer startIdx
     step prevState (layer, layerArrIdx) =
       hmmLayerStates layer
