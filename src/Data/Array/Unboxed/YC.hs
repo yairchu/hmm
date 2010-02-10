@@ -14,16 +14,19 @@ import Data.Ix (Ix)
 
 class IArray UArray a => Unboxed a where
   newSTUArray :: Ix i => (i, i) -> a -> ST s (STUArray s i a)
+  newSTUArrayDef :: Ix i => (i, i) -> ST s (STUArray s i a)
   readSTUArray :: Ix i => STUArray s i a -> i -> ST s a
   writeSTUArray :: Ix i => STUArray s i a -> i -> a -> ST s ()
 
 instance Unboxed Float where
   newSTUArray = newArray
+  newSTUArrayDef = (`newArray` 0)
   readSTUArray = readArray
   writeSTUArray = writeArray
 
 instance Unboxed Double where
   newSTUArray = newArray
+  newSTUArrayDef = (`newArray` 0)
   readSTUArray = readArray
   writeSTUArray = writeArray
 

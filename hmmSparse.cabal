@@ -28,6 +28,7 @@ Library
                        Numeric.HMM.Generate
                        Numeric.HMM.Viterbi
                        Numeric.Probability.Discrete
+                       Numeric.HMM.Internal
                        Data.Array.Unboxed.YC
                        Data.IndexRange
   ghc-options:         -O2 -Wall
