@@ -10,9 +10,12 @@ import Numeric.Probability.Discrete (Probs(probsFunc), probsLog)
 
 import Control.Applicative
 import Control.Monad (forM_)
+import Control.Monad.ListT (ListT)
+import Control.Monad.ST (ST)
 import Data.Array.IArray ((!), listArray)
 import Data.Array.ST (runSTUArray)
 import Data.Array.Unboxed (UArray)
+import Data.List.Class hiding (scanl)
 
 data AlgoMode p =
   AlgoMode
@@ -36,28 +39,27 @@ backwardAlgorithmH
 backwardAlgorithmH mode hmm observations =
   getVal
   where
-    getVal layer node = arr ! ((layerArrIdxs ! layer) + node)
+    getVal layer node = resultArr ! ((layerArrIdxs ! layer) + node)
     layers = map (hmmStatesForObservation hmm) observations
     numLayers = length layers
     layerArrIdxs :: UArray Int Int
     layerArrIdxs = listArray (0, numLayers - 1) . scanl (+) 0 . map hmmLayerSize $ init layers
     arrSize = sum $ map hmmLayerSize layers
-    nodeWeights st obser True
+    nodeWeight st obser True
       = algoAdd mode
-        (nodeWeights st obser False)
+        (nodeWeight st obser False)
         (algoVal mode (hmmStartProbs hmm) st)
     nodeWeight st obser False
       = algoVal mode (hmmObservationProbs hmm st) obser
-    idxWeight layer = nodeWeight . hmmLayerStates layer
     revLayers = reverse layers
     revObs = reverse observations
     lastLayer = head revLayers
-    arr :: UArray Int prob
-    arr = runSTUArray $ do
+    resultArr :: UArray Int prob
+    resultArr = runSTUArray $ do
       arr <- newSTUArrayDef (0, arrSize - 1)
       forM_ [0 .. hmmLayerSize lastLayer - 1] $ \i ->
         writeSTUArray arr ((layerArrIdxs ! (numLayers - 1)) + i)
-          $ idxWeight lastLayer i (head revObs) False
+          $ nodeWeight (hmmLayerStates lastLayer i) (head revObs) False
       forM_
         (getZipList $ (,,,)
         <$> ZipList [numLayers - 2, numLayers - 3 .. 0]
@@ -68,6 +70,25 @@ backwardAlgorithmH mode hmm observations =
         let
           arrIdxP = layerArrIdxs ! layerIdxP
           arrIdxN = layerArrIdxs ! (layerIdxP+1)
-        undefined  
+        forM_ [0 .. hmmLayerSize layerP] $ \iP ->
+          let
+            stateP = hmmLayerStates layerP iP
+            incoming
+              = joinM . fmap proc
+              . (fromList :: forall a s. [a] -> ListT (ST s) a)
+              . hmmLayerTransitionsFromPrev layerN
+              $ stateP
+            proc iN
+              = fmap
+                ( algoMult mode
+                . algoVal mode
+                  (hmmTransitionProbs hmm stateP)
+                $ hmmLayerStates layerN iN
+                )
+              $ readSTUArray arr (arrIdxN + iN)
+          in
+            writeSTUArray arr (arrIdxP + iP)
+            . (algoMult mode (nodeWeight stateP obsP (iP == 0)))
+            =<< foldl1L (algoAdd mode) incoming
       return arr
 
