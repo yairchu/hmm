@@ -1,7 +1,7 @@
 {-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
 
 module Numeric.HMM.Internal
-  ( backwardAlgorithmH, l1Mode, logLInfMode
+  ( Direction(..), algoH, l1Mode, logLInfMode
   ) where
 
 import Data.Array.Unboxed.YC
@@ -34,11 +34,13 @@ l1Mode = AlgoMode (+) (*) (1 /) log probsFunc
 logLInfMode :: (Ord a, Floating a) => AlgoMode a
 logLInfMode = AlgoMode max (+) negate id probsLog
 
-backwardAlgorithmH
+data Direction = Forwards | Backwards
+
+algoH
   :: forall state obs prob. (Unboxed prob, Num prob)
-  => AlgoMode prob -> Hmm state obs prob -> [obs]
+  => Direction -> AlgoMode prob -> Hmm state obs prob -> [obs]
   -> (prob, Int -> Int -> prob)
-backwardAlgorithmH mode hmm observations =
+algoH dir mode hmm observations =
   (score, getVal)
   where
     getVal layer node = resultArr ! ((layerArrIdxs ! layer) + node)
@@ -53,9 +55,15 @@ backwardAlgorithmH mode hmm observations =
         (algoVal mode (hmmStartProbs hmm) st)
     nodeWeight st obser False
       = algoVal mode (hmmObservationProbs hmm st) obser
-    revLayers = reverse layers
-    revObs = reverse observations
-    lastLayer = head revLayers
+    algoOrder =
+      case dir of
+        Forwards -> id
+        Backwards -> reverse
+    ordLayers = algoOrder layers
+    ordObs = algoOrder observations
+    ordLayerIdxs = algoOrder [0 .. numLayers - 1]
+    startLayer = head ordLayers
+    startLayerIdx = head ordLayerIdxs
     frmList :: forall a s. [a] -> ListT (ST s) a
     frmList = fromList
     normalizeLayer arr layer layerIdx = do
@@ -75,17 +83,17 @@ backwardAlgorithmH mode hmm observations =
       r `seq` return r
     (score, resultArr) = runST $ do
       arr <- newSTUArrayDef (0, arrSize - 1)
-      forM_ [0 .. hmmLayerSize lastLayer - 1] $ \i ->
-        writeSTUArray arr ((layerArrIdxs ! (numLayers - 1)) + i)
-          $ nodeWeight (hmmLayerStates lastLayer i) (head revObs) False
+      forM_ [0 .. hmmLayerSize startLayer - 1] $ \i ->
+        writeSTUArray arr ((layerArrIdxs ! startLayerIdx) + i)
+          $ nodeWeight (hmmLayerStates startLayer i) (head ordObs) False
       scoreRef <- newSTRef
-        =<< normalizeLayer arr lastLayer (numLayers - 1)
+        =<< normalizeLayer arr startLayer startLayerIdx
       forM_
         (getZipList $ (,,,)
-        <$> ZipList [numLayers - 2, numLayers - 3 .. 0]
-        <*> ZipList (tail revObs)
-        <*> ZipList (tail revLayers)
-        <*> ZipList revLayers
+        <$> ZipList (tail ordLayerIdxs)
+        <*> ZipList (tail ordObs)
+        <*> ZipList (tail ordLayers)
+        <*> ZipList ordLayers
         ) $ \(layerIdxP, obsP, layerP, layerN) -> do
         let
           arrIdxP = layerArrIdxs ! layerIdxP
@@ -113,7 +121,7 @@ backwardAlgorithmH mode hmm observations =
         prevScore <- readSTRef scoreRef
         let newScore = prevScore + layerNorm
         newScore `seq` writeSTRef scoreRef newScore
-      score <- readSTRef scoreRef
+      rScore <- readSTRef scoreRef
       rArr <- unsafeFreezeSTU arr
-      return (score, rArr)
+      return (rScore, rArr)
 

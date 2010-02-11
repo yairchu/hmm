@@ -40,5 +40,5 @@ hmmFwdBwd model observations =
   , hmmBackward = backward
   }
   where
-    (score, backward) = backwardAlgorithmH l1Mode model observations
+    (score, backward) = algoH Backwards l1Mode model observations
 

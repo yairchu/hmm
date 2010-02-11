@@ -6,7 +6,7 @@ module Numeric.HMM.Viterbi
 import Data.Array.Unboxed.YC (Unboxed(..))
 import Numeric.HMM (Hmm(..), HmmLayerDesc(..))
 import Numeric.HMM.FwdBwd (HmmFwdBwd(..))
-import Numeric.HMM.Internal (backwardAlgorithmH, logLInfMode)
+import Numeric.HMM.Internal (Direction(Backwards), algoH, logLInfMode)
 import Numeric.Probability.Discrete (probsLog)
 
 import Data.List (maximumBy)
@@ -37,7 +37,7 @@ viterbi model observations =
   where
     res = scanl step start . tail $ zip [0..] layers
     layers = map (hmmStatesForObservation model) observations
-    (score, bwd) = backwardAlgorithmH logLInfMode model observations
+    (score, bwd) = algoH Backwards logLInfMode model observations
     firstLayer = head layers
     startIdx = maximumOn (bwd 0) [0 .. hmmLayerSize firstLayer]
     start = hmmLayerStates firstLayer startIdx
