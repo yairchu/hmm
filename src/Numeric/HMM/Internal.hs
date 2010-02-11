@@ -21,16 +21,17 @@ data AlgoMode p =
   AlgoMode
   { algoAdd :: p -> p -> p
   , algoMult :: p -> p -> p
+  , algoInverse :: p -> p
   , algoVal :: forall s. Probs s p -> s -> p
   }
 
 -- for normal forward/backward algorithms
-l1Mode :: Num a => AlgoMode a
-l1Mode = AlgoMode (+) (*) probsFunc
+l1Mode :: Fractional a => AlgoMode a
+l1Mode = AlgoMode (+) (*) (1 /) probsFunc
 
 -- for viterbi
 logLInfMode :: (Ord a, Floating a) => AlgoMode a
-logLInfMode = AlgoMode max (+) probsLog
+logLInfMode = AlgoMode max (+) negate probsLog
 
 backwardAlgorithmH
   :: forall state obs prob. Unboxed prob
@@ -54,12 +55,29 @@ backwardAlgorithmH mode hmm observations =
     revLayers = reverse layers
     revObs = reverse observations
     lastLayer = head revLayers
+    frmList :: forall a s. [a] -> ListT (ST s) a
+    frmList = fromList
+    normalizeLayer arr layer layerIdx = do
+      let
+        idxs =
+          map (+ (layerArrIdxs ! layerIdx))
+          [0 .. hmmLayerSize layer - 1]
+      tot
+        <- foldl1L (algoAdd mode)
+        . joinM . fmap (readSTUArray arr)
+        . frmList $ idxs
+      let
+        mult = algoInverse mode tot
+        normalize i = modifySTUArray arr i $ algoMult mode mult
+      forM_ idxs normalize
+      return tot
     resultArr :: UArray Int prob
     resultArr = runSTUArray $ do
       arr <- newSTUArrayDef (0, arrSize - 1)
       forM_ [0 .. hmmLayerSize lastLayer - 1] $ \i ->
         writeSTUArray arr ((layerArrIdxs ! (numLayers - 1)) + i)
           $ nodeWeight (hmmLayerStates lastLayer i) (head revObs) False
+      normalizeLayer arr lastLayer (numLayers - 1)
       forM_
         (getZipList $ (,,,)
         <$> ZipList [numLayers - 2, numLayers - 3 .. 0]
@@ -74,8 +92,7 @@ backwardAlgorithmH mode hmm observations =
           let
             stateP = hmmLayerStates layerP iP
             incoming
-              = joinM . fmap proc
-              . (fromList :: forall a s. [a] -> ListT (ST s) a)
+              = joinM . fmap proc . frmList
               . hmmLayerTransitionsFromPrev layerN
               $ stateP
             proc iN
@@ -90,5 +107,6 @@ backwardAlgorithmH mode hmm observations =
             writeSTUArray arr (arrIdxP + iP)
             . (algoMult mode (nodeWeight stateP obsP (iP == 0)))
             =<< foldl1L (algoAdd mode) incoming
+        normalizeLayer arr layerP layerIdxP
       return arr
 

@@ -14,8 +14,7 @@ import Control.Applicative (liftA2)
 
 data HmmFwdBwd state prob =
   HmmFwdBwd
-  { hmmLayers :: Int -> HmmLayerDesc state
-  , -- | Forward algorithm. Including current layer's weight.
+  { -- | Forward algorithm. Including current layer's weight.
     -- Each layer is normalized.
     hmmForward :: Int -> Int -> prob
   , -- | Backward algorithm. Not including current layer's weights
@@ -33,11 +32,10 @@ hmmLayerProbs
   $ (liftA2 . liftA2 . liftA2) (*) hmmForward hmmBackward
 
 hmmFwdBwd
-  :: (Unboxed prob, Num prob)
-  => Hmm state obs prob -> Int -> (Int -> obs) -> HmmFwdBwd state prob
-hmmFwdBwd model numObs getObs =
+  :: (Unboxed prob, Fractional prob)
+  => Hmm state obs prob -> [obs] -> HmmFwdBwd state prob
+hmmFwdBwd model observations =
   HmmFwdBwd
-  { hmmLayers = hmmStatesForObservation model . getObs
-  , hmmBackward = backwardAlgorithmH l1Mode model $ map getObs [0 .. numObs - 1]
+  { hmmBackward = backwardAlgorithmH l1Mode model observations
   }
 
