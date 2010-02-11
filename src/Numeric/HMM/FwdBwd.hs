@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleContexts, ScopedTypeVariables #-}
 
 module Numeric.HMM.FwdBwd
   ( HmmFwdBwd(..)
@@ -11,6 +11,8 @@ import Numeric.HMM
 import Numeric.HMM.Internal
 
 import Control.Applicative (liftA2)
+import Data.Array.IArray ((!), listArray)
+import Data.Array.Unboxed (UArray)
 
 data HmmFwdBwd state prob =
   HmmFwdBwd
@@ -32,13 +34,25 @@ hmmLayerProbs
   $ (liftA2 . liftA2 . liftA2) (*) hmmForward hmmBackward
 
 hmmFwdBwd
-  :: (Unboxed prob, Floating prob)
+  :: forall state obs prob. (Unboxed prob, Floating prob)
   => Hmm state obs prob -> [obs] -> HmmFwdBwd state prob
 hmmFwdBwd model observations =
   HmmFwdBwd
   { hmmLogProb = score
   , hmmBackward = backward
+  , hmmForward = forward
+  , hmmLayerMult = (layerMult !)
   }
   where
     (score, backward) = algoH Backwards l1Mode model observations
+    (_, forward) = algoH Forwards l1Mode model observations
+    layerMult :: UArray Int prob
+    layerMult
+      = listArray (0, length observations - 1)
+      $ zipWith calcLayerMult [0 ..] observations
+    calcLayerMult i o
+      = (1 /)
+      . sum
+      . map (liftA2 (*) (forward i) (backward i))
+      $ [0 .. hmmLayerSize (hmmStatesForObservation model o) - 1]
 

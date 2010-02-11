@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes, ScopedTypeVariables #-}
+{-# LANGUAGE RankNTypes #-}
 
 module Numeric.HMM.Internal
   ( Direction(..), algoH, l1Mode, logLInfMode
@@ -22,22 +22,26 @@ data AlgoMode p =
   { algoAdd :: p -> p -> p
   , algoMult :: p -> p -> p
   , algoInverse :: p -> p
+  , algoZero :: p
   , algoToLog :: p -> p
   , algoVal :: forall s. Probs s p -> s -> p
   }
 
 -- for normal forward/backward algorithms
 l1Mode :: Floating a => AlgoMode a
-l1Mode = AlgoMode (+) (*) (1 /) log probsFunc
+l1Mode = AlgoMode (+) (*) (1 /) 0 log probsFunc
 
 -- for viterbi
 logLInfMode :: (Ord a, Floating a) => AlgoMode a
-logLInfMode = AlgoMode max (+) negate id probsLog
+logLInfMode = AlgoMode max (+) negate undefined id probsLog
 
 data Direction = Forwards | Backwards
 
+listTfromList :: [a] -> ListT (ST s) a
+listTfromList = fromList
+
 algoH
-  :: forall state obs prob. (Unboxed prob, Num prob)
+  :: (Unboxed prob, Num prob)
   => Direction -> AlgoMode prob -> Hmm state obs prob -> [obs]
   -> (prob, Int -> Int -> prob)
 algoH dir mode hmm observations =
@@ -64,8 +68,6 @@ algoH dir mode hmm observations =
     ordLayerIdxs = algoOrder [0 .. numLayers - 1]
     startLayer = head ordLayers
     startLayerIdx = head ordLayerIdxs
-    frmList :: forall a s. [a] -> ListT (ST s) a
-    frmList = fromList
     normalizeLayer arr layer layerIdx = do
       let
         idxs =
@@ -74,50 +76,83 @@ algoH dir mode hmm observations =
       tot
         <- foldl1L (algoAdd mode)
         . joinM . fmap (readSTUArray arr)
-        . frmList $ idxs
+        . listTfromList $ idxs
       let
         mult = algoInverse mode tot
         normalize i = modifySTUArray arr i $ algoMult mode mult
       forM_ idxs normalize
       let r = algoToLog mode tot
       r `seq` return r
+    startLayerVal i =
+      case dir of
+        Forwards -> 1
+        Backwards ->
+          nodeWeight (hmmLayerStates startLayer i) (head ordObs) False
+    backwardsLayer arr (layerIdxP, layerIdxN, obsP, _, layerP, layerN) =
+      forM_ [0 .. hmmLayerSize layerP] $ \iP ->
+        let
+          stateP = hmmLayerStates layerP iP
+          incoming
+            = joinM . fmap proc . listTfromList
+            . hmmLayerTransitionsFromPrev layerN
+            $ stateP
+          proc iN
+            = fmap
+              ( algoMult mode
+              . algoVal mode
+                (hmmTransitionProbs hmm stateP)
+              $ hmmLayerStates layerN iN
+              )
+            $ readSTUArray arr (arrIdxN + iN)
+        in
+          writeSTUArray arr (arrIdxP + iP)
+          . algoMult mode (nodeWeight stateP obsP (layerIdxP == 0))
+          =<< foldl1L (algoAdd mode) incoming
+      where
+        arrIdxP = layerArrIdxs ! layerIdxP
+        arrIdxN = layerArrIdxs ! layerIdxN
+    forwardsLayer arr (layerIdxN, layerIdxP, _, obsP, layerN, layerP) = do
+      let
+        arrIdxN = layerArrIdxs ! layerIdxN
+        arrIdxP = layerArrIdxs ! layerIdxP
+      forM_ [0 .. hmmLayerSize layerN - 1] $ \iN ->
+        writeSTUArray arr (arrIdxN + iN) (algoZero mode)
+      forM_ [0 .. hmmLayerSize layerP - 1] $ \iP -> do
+        valP <- readSTUArray arr (arrIdxP + iP)
+        let
+          stateP = hmmLayerStates layerP iP
+          valPInc
+            = algoMult mode valP
+            $ nodeWeight stateP obsP (layerIdxP == 0)
+        forM_ (hmmLayerTransitionsFromPrev layerN stateP) $ \iN ->
+          let
+            valToAdd
+              = algoMult mode valPInc
+              . algoVal mode
+                (hmmTransitionProbs hmm stateP)
+              $ hmmLayerStates layerN iN
+          in
+            modifySTUArray arr (arrIdxN + iN) $ algoAdd mode valToAdd
     (score, resultArr) = runST $ do
       arr <- newSTUArrayDef (0, arrSize - 1)
       forM_ [0 .. hmmLayerSize startLayer - 1] $ \i ->
         writeSTUArray arr ((layerArrIdxs ! startLayerIdx) + i)
-          $ nodeWeight (hmmLayerStates startLayer i) (head ordObs) False
+          $ startLayerVal i
       scoreRef <- newSTRef
         =<< normalizeLayer arr startLayer startLayerIdx
       forM_
-        (getZipList $ (,,,)
+        (getZipList $ (,,,,,)
         <$> ZipList (tail ordLayerIdxs)
+        <*> ZipList ordLayerIdxs
         <*> ZipList (tail ordObs)
+        <*> ZipList ordObs
         <*> ZipList (tail ordLayers)
         <*> ZipList ordLayers
-        ) $ \(layerIdxP, obsP, layerP, layerN) -> do
-        let
-          arrIdxP = layerArrIdxs ! layerIdxP
-          arrIdxN = layerArrIdxs ! (layerIdxP+1)
-        forM_ [0 .. hmmLayerSize layerP] $ \iP ->
-          let
-            stateP = hmmLayerStates layerP iP
-            incoming
-              = joinM . fmap proc . frmList
-              . hmmLayerTransitionsFromPrev layerN
-              $ stateP
-            proc iN
-              = fmap
-                ( algoMult mode
-                . algoVal mode
-                  (hmmTransitionProbs hmm stateP)
-                $ hmmLayerStates layerN iN
-                )
-              $ readSTUArray arr (arrIdxN + iN)
-          in
-            writeSTUArray arr (arrIdxP + iP)
-            . (algoMult mode (nodeWeight stateP obsP (iP == 0)))
-            =<< foldl1L (algoAdd mode) incoming
-        layerNorm <- normalizeLayer arr layerP layerIdxP
+        ) $ \args@(layerIdx, _, _, _, layer, _) -> do
+        case dir of
+          Forwards -> forwardsLayer arr args
+          Backwards -> backwardsLayer arr args
+        layerNorm <- normalizeLayer arr layer layerIdx
         prevScore <- readSTRef scoreRef
         let newScore = prevScore + layerNorm
         newScore `seq` writeSTRef scoreRef newScore
