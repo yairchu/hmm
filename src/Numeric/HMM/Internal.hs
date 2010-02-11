@@ -11,34 +11,35 @@ import Numeric.Probability.Discrete (Probs(probsFunc), probsLog)
 import Control.Applicative
 import Control.Monad (forM_)
 import Control.Monad.ListT (ListT)
-import Control.Monad.ST (ST)
+import Control.Monad.ST (ST, runST)
 import Data.Array.IArray ((!), listArray)
-import Data.Array.ST (runSTUArray)
 import Data.Array.Unboxed (UArray)
 import Data.List.Class hiding (scanl)
+import Data.STRef
 
 data AlgoMode p =
   AlgoMode
   { algoAdd :: p -> p -> p
   , algoMult :: p -> p -> p
   , algoInverse :: p -> p
+  , algoToLog :: p -> p
   , algoVal :: forall s. Probs s p -> s -> p
   }
 
 -- for normal forward/backward algorithms
-l1Mode :: Fractional a => AlgoMode a
-l1Mode = AlgoMode (+) (*) (1 /) probsFunc
+l1Mode :: Floating a => AlgoMode a
+l1Mode = AlgoMode (+) (*) (1 /) log probsFunc
 
 -- for viterbi
 logLInfMode :: (Ord a, Floating a) => AlgoMode a
-logLInfMode = AlgoMode max (+) negate probsLog
+logLInfMode = AlgoMode max (+) negate id probsLog
 
 backwardAlgorithmH
-  :: forall state obs prob. Unboxed prob
+  :: forall state obs prob. (Unboxed prob, Num prob)
   => AlgoMode prob -> Hmm state obs prob -> [obs]
-  -> Int -> Int -> prob
+  -> (prob, Int -> Int -> prob)
 backwardAlgorithmH mode hmm observations =
-  getVal
+  (score, getVal)
   where
     getVal layer node = resultArr ! ((layerArrIdxs ! layer) + node)
     layers = map (hmmStatesForObservation hmm) observations
@@ -70,14 +71,15 @@ backwardAlgorithmH mode hmm observations =
         mult = algoInverse mode tot
         normalize i = modifySTUArray arr i $ algoMult mode mult
       forM_ idxs normalize
-      return tot
-    resultArr :: UArray Int prob
-    resultArr = runSTUArray $ do
+      let r = algoToLog mode tot
+      r `seq` return r
+    (score, resultArr) = runST $ do
       arr <- newSTUArrayDef (0, arrSize - 1)
       forM_ [0 .. hmmLayerSize lastLayer - 1] $ \i ->
         writeSTUArray arr ((layerArrIdxs ! (numLayers - 1)) + i)
           $ nodeWeight (hmmLayerStates lastLayer i) (head revObs) False
-      normalizeLayer arr lastLayer (numLayers - 1)
+      scoreRef <- newSTRef
+        =<< normalizeLayer arr lastLayer (numLayers - 1)
       forM_
         (getZipList $ (,,,)
         <$> ZipList [numLayers - 2, numLayers - 3 .. 0]
@@ -107,6 +109,11 @@ backwardAlgorithmH mode hmm observations =
             writeSTUArray arr (arrIdxP + iP)
             . (algoMult mode (nodeWeight stateP obsP (iP == 0)))
             =<< foldl1L (algoAdd mode) incoming
-        normalizeLayer arr layerP layerIdxP
-      return arr
+        layerNorm <- normalizeLayer arr layerP layerIdxP
+        prevScore <- readSTRef scoreRef
+        let newScore = prevScore + layerNorm
+        newScore `seq` writeSTRef scoreRef newScore
+      score <- readSTRef scoreRef
+      rArr <- unsafeFreezeSTU arr
+      return (score, rArr)
 

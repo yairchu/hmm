@@ -30,16 +30,14 @@ viterbi
   => Hmm state obs prob -> [obs] -> ViterbiResult state prob
 viterbi model observations =
   last res `seq`
-  logProb `seq`
   ViterbiResult
   { viterbiPath = res
-  , viterbiLogProb = logProb
+  , viterbiLogProb = score
   }
   where
-    logProb = bwd 0 startIdx
     res = scanl step start . tail $ zip [0..] layers
     layers = map (hmmStatesForObservation model) observations
-    bwd = backwardAlgorithmH logLInfMode model observations
+    (score, bwd) = backwardAlgorithmH logLInfMode model observations
     firstLayer = head layers
     startIdx = maximumOn (bwd 0) [0 .. hmmLayerSize firstLayer]
     start = hmmLayerStates firstLayer startIdx

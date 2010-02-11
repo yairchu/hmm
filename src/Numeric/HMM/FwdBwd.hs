@@ -32,10 +32,13 @@ hmmLayerProbs
   $ (liftA2 . liftA2 . liftA2) (*) hmmForward hmmBackward
 
 hmmFwdBwd
-  :: (Unboxed prob, Fractional prob)
+  :: (Unboxed prob, Floating prob)
   => Hmm state obs prob -> [obs] -> HmmFwdBwd state prob
 hmmFwdBwd model observations =
   HmmFwdBwd
-  { hmmBackward = backwardAlgorithmH l1Mode model observations
+  { hmmLogProb = score
+  , hmmBackward = backward
   }
+  where
+    (score, backward) = backwardAlgorithmH l1Mode model observations
 
